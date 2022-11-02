@@ -23,6 +23,7 @@ impl RequestReceiver{
                 let (_, src_addr) = self.socket.recv_from(&mut buf).expect("Didn't receive data");
                 let buf_str = str::from_utf8(&buf[1..]).unwrap();
                 println!("{}", buf_str);
+                // println!("Got a message");
                 if buf[0] == 0  // first byte is 1 if sent message is acknowlegement, 0 if a request
                 {
                     let mut reply_addr = src_addr;
@@ -30,7 +31,7 @@ impl RequestReceiver{
                     let mut message = String::from(format!("Message Recieved By {}", self.addr));
                     let mut message = message.into_bytes();
                     message.insert(0,1);
-
+                    println!("Got a message");
                     self.socket.send_to(&message, reply_addr).expect("Failed to send acknowledgement");
                 }
         }

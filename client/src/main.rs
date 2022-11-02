@@ -13,6 +13,7 @@ mod receiver;
 mod sender;
 // use std::thread;
 use std::env;
+use std::io;
 // use receiver::RequestReceiver;
 use sender::RequestSender;
 fn main() {
@@ -20,9 +21,20 @@ fn main() {
     let send_addr = &args[1];
      
     // let receiver = RequestReceiver::new(receive_addr.to_string());
-    let mut sender = RequestSender::new(send_addr.to_string());
+    let sender = RequestSender::new(send_addr.to_string());
     let t = sender.init();
+    loop{
+
+        let mut message = String::new();
+        io::stdin().read_line(&mut message).unwrap();
+        let mut message = String::from(message.trim());
+        sender.send(message);
+        
+    }
     t.join().unwrap();
+    loop{
+
+    }
     
 }
 
