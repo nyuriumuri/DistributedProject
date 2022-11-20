@@ -8,7 +8,8 @@ use std::time;
 
 pub struct RequestSender{
     addr: String,
-    socket: Arc<Mutex<UdpSocket>>,
+    rec_socket: Arc<Mutex<UdpSocket>>,
+    send_socket: Arc<Mutex<UdpSocket>>,
     servers: Vec<String>,
     min_server: Arc<Mutex<u16>>,
     min_server_load: Arc<Mutex<u16>>,
@@ -18,7 +19,7 @@ pub struct RequestSender{
 
 const SERVERS_JSON : &str = "servers.json";
 impl RequestSender{
-    pub fn new(addr: String) -> RequestSender {
+    pub fn new(rec_addr: String, send_addr: String) -> RequestSender {
         let servers_string = fs::read_to_string(SERVERS_JSON).expect("Could not read server json file");   
         let servers = serde_json::from_str(&servers_string).expect("Could not deserialize json");  
         RequestSender{
@@ -26,13 +27,15 @@ impl RequestSender{
             servers: servers,
             min_server: Arc::new(Mutex::new(0)),
             min_server_load: Arc::new(Mutex::new(u16::MAX)),
-            socket: Arc::new(Mutex::new(UdpSocket::bind(addr).expect("couldn't bind sender to address")))
+            rec_socket: Arc::new(Mutex::new(UdpSocket::bind(rec_addr).expect("couldn't bind sender to address"))),
+            send_socket: Arc::new(Mutex::new(UdpSocket::bind(send_addr).expect("couldn't bind sender to address")))
+
         }
     }
 
 
     pub fn init(&self) -> thread::JoinHandle<()>{
-        let s_socket  = Arc::clone(&self.socket);
+        let s_socket  = Arc::clone(&self.recv_socket);
         let s_min_server_load = Arc::clone(&self.min_server_load);
         let s_min_server = Arc::clone(&self.min_server);
         let servers = self.servers.clone();
@@ -82,7 +85,7 @@ impl RequestSender{
     }   
 
     pub fn send(&self, message: String){
-        let socket = self.socket.lock().unwrap();
+        let socket = self.send_socket.lock().unwrap();
         let mut message_buf = message.into_bytes();
         // let mut message = String::new();
         // io::stdin().read_line(&mut message).unwrap();
