@@ -7,7 +7,7 @@ use std::thread;
 use std::time;
 
 pub struct RequestSender{
-    addr: String,
+  //  addr: String,
     rec_socket: Arc<Mutex<UdpSocket>>,
     send_socket: Arc<Mutex<UdpSocket>>,
     servers: Vec<String>,
@@ -23,7 +23,6 @@ impl RequestSender{
         let servers_string = fs::read_to_string(SERVERS_JSON).expect("Could not read server json file");   
         let servers = serde_json::from_str(&servers_string).expect("Could not deserialize json");  
         RequestSender{
-            addr: addr.clone(),
             servers: servers,
             min_server: Arc::new(Mutex::new(0)),
             min_server_load: Arc::new(Mutex::new(u16::MAX)),
@@ -35,15 +34,15 @@ impl RequestSender{
 
 
     pub fn init(&self) -> thread::JoinHandle<()>{
-        let s_socket  = Arc::clone(&self.recv_socket);
+        let s_socket  = Arc::clone(&self.rec_socket);
         let s_min_server_load = Arc::clone(&self.min_server_load);
         let s_min_server = Arc::clone(&self.min_server);
         let servers = self.servers.clone();
         // socket = self.socket.clone();
         return thread::spawn(move || { 
-            let buf : [u8;2]= [0, 0];
+            let buf : [u8;2]= [2, 2];
             let socket_lock = s_socket.lock().unwrap();
-            socket_lock.set_read_timeout(Some(time::Duration::from_secs(4))).unwrap();
+            socket_lock.set_read_timeout(Some(time::Duration::from_secs(1))).unwrap();
             drop(socket_lock);
             loop
             {   
@@ -61,6 +60,7 @@ impl RequestSender{
                             let mut min_server_load = s_min_server_load.lock().unwrap();
                             let mut min_server = s_min_server.lock().unwrap();
                             let val = u16::from_be_bytes(recv_buf);
+                            print!("{}: {} | {:?}\n", i, val, recv_buf);
                             if val < *min_server_load{
                                 *min_server_load = val;
                                 *min_server = i as u16;
@@ -72,13 +72,13 @@ impl RequestSender{
 
                 }
                 let mut min_server_load = s_min_server_load.lock().unwrap();
-                let mut min_server = s_min_server.lock().unwrap();
+                let min_server = s_min_server.lock().unwrap();
                 println!("Load: {} \nServer: {}",*min_server_load, *min_server);
                 *min_server_load = u16::MAX;
 
                 drop(min_server_load);
                 drop(min_server);
-                thread::sleep(time::Duration::from_secs(5));
+                thread::sleep(time::Duration::from_millis(500));
             }
          });
         
@@ -86,7 +86,7 @@ impl RequestSender{
 
     pub fn send(&self, message: String){
         let socket = self.send_socket.lock().unwrap();
-        let mut message_buf = message.into_bytes();
+        let message_buf = message.into_bytes();
         // let mut message = String::new();
         // io::stdin().read_line(&mut message).unwrap();
         // let mut message = String::from(message.trim()).into_bytes();

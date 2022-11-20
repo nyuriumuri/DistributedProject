@@ -1,43 +1,88 @@
+
 // use  std::sync::mpsc::Sender;
-use std::net::{UdpSocket};
-use std::str;
-use rand::prelude::{random};
+use std::net::{UdpSocket, SocketAddr, SocketAddrV4};
+use std::thread::JoinHandle;
+use std::time::Duration;
+use std::{str, thread};
+use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{ Sender, Receiver, channel};
+use std::str::FromStr;
+//use rand::prelude::{random};
 
 pub struct RequestReceiver{
     addr: String,
-    socket: UdpSocket
+    socket: Arc<Mutex<UdpSocket>>,
+    sender: Arc<Mutex<Sender<([u8; 100], SocketAddr)>>>, 
+    receiver:Receiver<([u8; 100], SocketAddr)>,
+    request_socket: UdpSocket,
+    load: Arc<Mutex<u16>>,
+
 }
 
 
 impl RequestReceiver{
     pub fn new(addr: String) -> RequestReceiver {
+        let mut request_addr = SocketAddrV4::from_str(&addr).unwrap();
+        request_addr.set_port(request_addr.port()+100); 
+        let (sender, receiver) = channel::<([u8; 100], SocketAddr)>();
         RequestReceiver{
             addr: addr.clone(),
-            socket: UdpSocket::bind(addr).expect("couldn't bind sender to address")
+            socket: Arc::new(Mutex::new(UdpSocket::bind(addr).expect("couldn't bind sender to address"))),
+            sender: Arc::new(Mutex::new(sender)), 
+            receiver: receiver,
+            request_socket: UdpSocket::bind(request_addr).expect("Failed to bind to request addr"), 
+            load: Arc::new(Mutex::new(0))
+
         }
     }
 
-    pub fn listen(&self){
+    pub fn listen(&self) -> JoinHandle<()>{
         println!("Listening on port {}", self.addr);
-        loop{
-                let mut buf = [0; 1000];    
-                let (_, src_addr) = self.socket.recv_from(&mut buf).expect("Didn't receive data");
+        let load_arc = self.load.clone();
+        let socket_arc = self.socket.clone();
+        let sender_arc  = self.sender.clone();
+        return thread::spawn(move || loop{
+                let socket =  socket_arc.lock().unwrap();
+                let sender = sender_arc.lock().unwrap();
+                let mut buf = [0; 100];    
+                let (_, src_addr) = (*socket).recv_from(&mut buf).expect("Didn't receive data");
                 let buf_str = str::from_utf8(&buf[..]).unwrap();
                 println!("{}", buf_str);
                 println!("Got a message from {}", src_addr);
-                if buf[0] == 0  // first byte is 1 if sent message is acknowlegement, 0 if a request
+                if buf[0] == 2  // asking for load
                 {
                     let reply_addr = src_addr;
-                    let message: u16 = random();
-                    println!("{}",message);
-                    let message = message.to_be_bytes();
-                    // reply_addr.set_port(reply_addr.port()+1);
-                    // let mut message = String::from(format!("Message Recieved By {}", self.addr));
-                    // let mut message = message.into_bytes();
-                    // message.insert(0,1);
-                    // println!("Got a message");
-                    self.socket.send_to(&message, reply_addr).expect("Failed to send acknowledgement");
+          
+                    let message = load_arc.lock().unwrap();
+                    println!("Load: {}",*message);
+                    let message = (*message).to_be_bytes();
+                    println!("{:?}", message);
+                    (*socket).send_to(&message, reply_addr).expect("Failed to send acknowledgement");
                 }
+                else if  buf[0] == 1 { // ack
+                    
+                }
+                else {  
+                    let mut load = load_arc.lock().unwrap();
+                    *load += 1;
+                    drop(load);
+                    sender.send((buf, src_addr)).expect("Failed to pass request in queue");
+   
+                }
+        });
+    }
+
+    pub fn handle_requests(&self){
+        loop{
+            let (_request, addr) = self.receiver.recv().unwrap();
+            let mut load = self.load.lock().unwrap();
+            *load -= 1; 
+            drop(load);
+            let reply = String::from("REQ PROCESSED");
+            let reply = reply.as_bytes(); 
+            self.request_socket.send_to(reply, addr).expect("Failed to send processed request");
+            thread::sleep(Duration::from_secs(2));
+            
         }
     }
 
