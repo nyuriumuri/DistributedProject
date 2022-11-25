@@ -1,33 +1,52 @@
+
 // use  std::sync::mpsc::Receiver;
+use serde::{Deserialize, Serialize};
 use std::net::UdpSocket;
 use std::sync::{Arc, Mutex};
-use std::{fs};
 use serde_json;
 use std::thread;
 use std::time;
-
+use std::fs;
+#[derive(Deserialize, Serialize, Debug)]
+struct ServerStat {
+    name: String, 
+    num_sent: u32,
+    num_ackd : u32 
+  }
+  
+#[derive(Deserialize, Serialize, Debug)]
+pub struct ClientStats {
+    name: String, 
+    server_stats: Vec<ServerStat>,
+  }
 pub struct RequestSender{
   //  addr: String,
+    name: String, 
     rec_socket: Arc<Mutex<UdpSocket>>,
     send_socket: Arc<Mutex<UdpSocket>>,
     servers: Vec<String>,
     min_server: Arc<Mutex<u16>>,
     min_server_load: Arc<Mutex<u16>>,
+    messages_per_server: [(u32, u32); 3]   //0: total messages sent  | 1: messages successfully received 
 
     // recepient_addr: String, 
 }
 
 const SERVERS_JSON : &str = "servers.json";
 impl RequestSender{
-    pub fn new(rec_addr: String, send_addr: String) -> RequestSender {
+    pub fn new(rec_addr: String, send_addr: String, name: String) -> RequestSender {
         let servers_string = fs::read_to_string(SERVERS_JSON).expect("Could not read server json file");   
         let servers = serde_json::from_str(&servers_string).expect("Could not deserialize json");  
+        let send_socket = UdpSocket::bind(send_addr).expect("couldn't bind sender to address");
+        send_socket.set_read_timeout(Some(time::Duration::from_secs(5))).unwrap();
         RequestSender{
+            name: name, 
             servers: servers,
             min_server: Arc::new(Mutex::new(0)),
             min_server_load: Arc::new(Mutex::new(u16::MAX)),
             rec_socket: Arc::new(Mutex::new(UdpSocket::bind(rec_addr).expect("couldn't bind sender to address"))),
-            send_socket: Arc::new(Mutex::new(UdpSocket::bind(send_addr).expect("couldn't bind sender to address")))
+            send_socket: Arc::new(Mutex::new(send_socket)),
+            messages_per_server : [(0,0); 3] 
 
         }
     }
@@ -60,20 +79,20 @@ impl RequestSender{
                             let mut min_server_load = s_min_server_load.lock().unwrap();
                             let mut min_server = s_min_server.lock().unwrap();
                             let val = u16::from_be_bytes(recv_buf);
-                            print!("{}: {} | {:?}\n", i, val, recv_buf);
+                           // print!("{}: {} | {:?}\n", i, val, recv_buf);
                             if val < *min_server_load{
                                 *min_server_load = val;
                                 *min_server = i as u16;
                             }
                         },
 
-                        Err(_) => println!("Listen Failed")
+                        Err(_) => ()
                     };
 
                 }
                 let mut min_server_load = s_min_server_load.lock().unwrap();
                 let min_server = s_min_server.lock().unwrap();
-                println!("Load: {} \nServer: {}",*min_server_load, *min_server);
+               // println!("Load: {} \nServer: {}",*min_server_load, *min_server);
                 *min_server_load = u16::MAX;
 
                 drop(min_server_load);
@@ -84,14 +103,35 @@ impl RequestSender{
         
     }   
 
-    pub fn send(&self, message: String){
+    pub fn send(&mut self, message: String){
         let socket = self.send_socket.lock().unwrap();
         let message_buf = message.into_bytes();
-        // let mut message = String::new();
-        // io::stdin().read_line(&mut message).unwrap();
-        // let mut message = String::from(message.trim()).into_bytes();
-        // message_buf.insert(1,0);
         let min_server = self.min_server.lock().unwrap();
-        socket.send_to(&message_buf, &self.servers[*min_server as usize]).unwrap();
+        let min_server = min_server.clone(); 
+        socket.send_to(&message_buf, &self.servers[min_server as usize]).unwrap();
+        self.messages_per_server[usize::from(min_server)].0+=1; 
+        let mut buf: [u8; 50] = [0; 50];  
+        match socket.recv_from(&mut buf){
+            Ok(_) =>  {
+                //println!("{}", String::from_utf8(buf.to_vec()).unwrap());
+                self.messages_per_server[usize::from(min_server)].1+=1;  },
+            Err(_) => {
+               // println!("Missed Timing");
+            },  
+        }
+    }
+
+    pub fn get_stats(&self) -> ClientStats{
+        let mut client_stats = ClientStats{name: self.name.clone(), server_stats: vec![]}; 
+        let mut stats = vec![]; 
+        stats.push(format!("\n{} :", self.name).to_string());
+        stats.push(String::from("Server\tSent\tAcknowledged"));
+        for (i, server_stats) in self.messages_per_server.into_iter().enumerate()  {
+            stats.push(format!("{}\t{}\t{}", i, server_stats.0, server_stats.1));
+            client_stats.server_stats.push(ServerStat{name: format!("{}",i), num_sent: server_stats.0, num_ackd: server_stats.1});
+        }
+        print!("{}", stats.join("\n"));    
+        client_stats
+        
     }
 }

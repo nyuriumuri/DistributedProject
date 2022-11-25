@@ -62,11 +62,11 @@ impl RequestReceiver{
                 else if  buf[0] == 1 { // ack
                     
                 }
-                else {  
+                else {  // got a request from the client
                     let mut load = load_arc.lock().unwrap();
                     *load += 1;
                     drop(load);
-                    sender.send((buf, src_addr)).expect("Failed to pass request in queue");
+                    sender.send((buf, src_addr)).expect("Failed to pass request in queue"); // add request to queue to be handled
    
                 }
         });
@@ -74,14 +74,15 @@ impl RequestReceiver{
 
     pub fn handle_requests(&self){
         loop{
-            let (_request, addr) = self.receiver.recv().unwrap();
+            // read request from queue, send a reply, then sleep
+            let (_request, addr) = self.receiver.recv().unwrap();  
             let mut load = self.load.lock().unwrap();
             *load -= 1; 
-            drop(load);
+            drop(load);  // dropping mutex early as we no longer need it 
             let reply = String::from("REQ PROCESSED");
             let reply = reply.as_bytes(); 
             self.request_socket.send_to(reply, addr).expect("Failed to send processed request");
-            thread::sleep(Duration::from_secs(2));
+            thread::sleep(Duration::from_millis(200));
             
         }
     }
