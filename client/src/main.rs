@@ -44,13 +44,13 @@ fn main() {
         let loop_fun = move || {
           let mut sender = RequestSender::new(send_addr.to_string(), rec_addr.to_string(), format!("Client {}", i));
           sender.init();
-            for _ in 0..10{
+            for j in 0..10{
 
             
                 // let mut message = random();
                 // io::stdin().read_line(&mut message).unwrap();
                 // let message = String::from(message.trim());
-                sender.send(String::from(format!("Hello from {}", send_addr.to_string())));
+                sender.send(String::from(format!("Hello from {} [{}]", send_addr.to_string(), j)));
                 thread::sleep(Duration::from_secs(1));
                 
             }

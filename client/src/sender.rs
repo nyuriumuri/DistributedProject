@@ -105,16 +105,28 @@ impl RequestSender{
 
     pub fn send(&mut self, message: String){
         let socket = self.send_socket.lock().unwrap();
-        let message_buf = message.into_bytes();
+        let message_buf = message.clone().into_bytes();
         let min_server = self.min_server.lock().unwrap();
         let min_server = min_server.clone(); 
         socket.send_to(&message_buf, &self.servers[min_server as usize]).unwrap();
         self.messages_per_server[usize::from(min_server)].0+=1; 
-        let mut buf: [u8; 50] = [0; 50];  
+        let mut buf: [u8; 100] = [0; 100];  
         match socket.recv_from(&mut buf){
             Ok(_) =>  {
                 //println!("{}", String::from_utf8(buf.to_vec()).unwrap());
-                self.messages_per_server[usize::from(min_server)].1+=1;  },
+                let reply_str = String::from_utf8(buf.to_vec()).unwrap();
+                let reply_str = {
+                    let r = reply_str.trim_matches(char::from(0));
+                    String::from(r)
+                };
+                if reply_str.trim().eq(message.trim())
+                { 
+                    // println!("SUCCESS Expected |{}| GOT |{}|", message.trim(), reply_str.trim());
+                    self.messages_per_server[usize::from(min_server)].1+=1;  
+                }else{
+                    // println!("ERR Expected |{:?}| GOT |{:?}|", message.trim().as_bytes(), reply_str.trim().as_bytes());
+                }
+            },
             Err(_) => {
                // println!("Missed Timing");
             },  

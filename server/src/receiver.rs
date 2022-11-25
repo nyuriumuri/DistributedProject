@@ -75,14 +75,13 @@ impl RequestReceiver{
     pub fn handle_requests(&self){
         loop{
             // read request from queue, send a reply, then sleep
-            let (_request, addr) = self.receiver.recv().unwrap();  
+            let (request, addr) = self.receiver.recv().unwrap();  
             let mut load = self.load.lock().unwrap();
             *load -= 1; 
             drop(load);  // dropping mutex early as we no longer need it 
-            let reply = String::from("REQ PROCESSED");
-            let reply = reply.as_bytes(); 
-            self.request_socket.send_to(reply, addr).expect("Failed to send processed request");
-            thread::sleep(Duration::from_millis(200));
+            // let reply = String::from("REQ PROCESSED");
+            self.request_socket.send_to(&request, addr).expect("Failed to send processed request");
+            thread::sleep(Duration::from_millis(100));
             
         }
     }
