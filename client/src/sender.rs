@@ -97,7 +97,7 @@ impl RequestSender{
 
                 drop(min_server_load);
                 drop(min_server);
-                thread::sleep(time::Duration::from_millis(500));
+                thread::sleep(time::Duration::from_secs(5));
             }
          });
         

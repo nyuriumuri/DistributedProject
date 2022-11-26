@@ -1,12 +1,14 @@
 
+use std::fs::{File};
 // use  std::sync::mpsc::Sender;
 use std::net::{UdpSocket, SocketAddr, SocketAddrV4};
 use std::thread::JoinHandle;
 use std::time::Duration;
-use std::{str, thread};
+use std::{thread};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{ Sender, Receiver, channel};
 use std::str::FromStr;
+use std::io::Write;
 //use rand::prelude::{random};
 
 pub struct RequestReceiver{
@@ -46,17 +48,17 @@ impl RequestReceiver{
                 let sender = sender_arc.lock().unwrap();
                 let mut buf = [0; 100];    
                 let (_, src_addr) = (*socket).recv_from(&mut buf).expect("Didn't receive data");
-                let buf_str = str::from_utf8(&buf[..]).unwrap();
-                println!("{}", buf_str);
-                println!("Got a message from {}", src_addr);
+                // let buf_str = str::from_utf8(&buf[..]).unwrap();
+                // println!("{}", buf_str);
+                // println!("Got a message from {}", src_addr);
                 if buf[0] == 2  // asking for load
                 {
                     let reply_addr = src_addr;
           
                     let message = load_arc.lock().unwrap();
-                    println!("Load: {}",*message);
+                    // println!("Load: {}",*message);
                     let message = (*message).to_be_bytes();
-                    println!("{:?}", message);
+                    // println!("{:?}", message);
                     (*socket).send_to(&message, reply_addr).expect("Failed to send acknowledgement");
                 }
                 else if  buf[0] == 1 { // ack
@@ -72,6 +74,30 @@ impl RequestReceiver{
         });
     }
 
+    pub fn log_stats(&self) -> JoinHandle<()>{
+        let load_arc = self.load.clone();
+
+        let mut file = File::create({
+            let fname = self.addr.clone();
+            
+            format!("{}.txt", fname.replace(":", "-"))
+        }).unwrap();
+
+        return thread::spawn(move || loop{
+            let load_val = {
+                let load   = load_arc.lock().unwrap();
+                *load 
+            };
+
+    
+           if let Err(_) =  writeln!(file, "{}", load_val)
+           {
+             ()
+           }
+           thread::sleep(Duration::from_secs(5)); 
+        });
+    }
+
     pub fn handle_requests(&self){
         loop{
             // read request from queue, send a reply, then sleep
@@ -81,7 +107,7 @@ impl RequestReceiver{
             drop(load);  // dropping mutex early as we no longer need it 
             // let reply = String::from("REQ PROCESSED");
             self.request_socket.send_to(&request, addr).expect("Failed to send processed request");
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(10));
             
         }
     }
