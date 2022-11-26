@@ -10,10 +10,11 @@ fn main() {
     
     let receiver = RequestReceiver::new(receive_addr.to_string());
     let t1 = receiver.listen(); 
+    let t2 = receiver.log_stats();
     receiver.handle_requests();
 
     t1.join().unwrap();
-    // t2.join().unwrap();
+    t2.join().unwrap();
     
 }
 

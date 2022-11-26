@@ -35,16 +35,16 @@ fn main() {
 
     // let receiver = RequestReceiver::new(receive_addr.to_string());
     
-    for i in 0..50{
+    for i in 0..300{
         let mut send_addr = SocketAddrV4::from_str(send_addr).unwrap();
         send_addr.set_port(send_addr.port()+i);
         let mut rec_addr = send_addr.clone();
-        rec_addr.set_port(rec_addr.port()+100);
+        rec_addr.set_port(rec_addr.port()+1000);
         let stats_arc_ = stats_arc.clone();
         let loop_fun = move || {
           let mut sender = RequestSender::new(send_addr.to_string(), rec_addr.to_string(), format!("Client {}", i));
           sender.init();
-            for j in 0..10{
+            for j in 0..100{
 
             
                 // let mut message = random();
