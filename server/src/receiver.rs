@@ -94,7 +94,7 @@ impl RequestReceiver{
            {
              ()
            }
-           thread::sleep(Duration::from_secs(5)); 
+           thread::sleep(Duration::from_secs(1)); 
         });
     }
 
@@ -105,9 +105,10 @@ impl RequestReceiver{
             let mut load = self.load.lock().unwrap();
             *load -= 1; 
             drop(load);  // dropping mutex early as we no longer need it 
+            println!("{}", String::from_utf8(request.to_vec()).unwrap());
             // let reply = String::from("REQ PROCESSED");
             self.request_socket.send_to(&request, addr).expect("Failed to send processed request");
-            thread::sleep(Duration::from_millis(10));
+            thread::sleep(Duration::from_micros(1000));
             
         }
     }
