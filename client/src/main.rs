@@ -13,7 +13,7 @@ use std::thread;
 // use receiver::RequestReceiver;
 use sender::{RequestSender, ClientStats};
 
-
+const SERVERS_JSON: &str = "servers.json"; 
 
 fn main() {
     let args: Vec<String> = env::args().collect();  // get local and remote addresses
@@ -24,17 +24,20 @@ fn main() {
       Arc::new(Mutex::new(s)) 
     };
 
+
+    let servers_string = fs::read_to_string(SERVERS_JSON).expect("Could not read server json file");  
     
     for i in 0..500{
         let mut send_addr = SocketAddrV4::from_str(send_addr).unwrap();
         send_addr.set_port(send_addr.port()+i);
         let mut rec_addr = send_addr.clone();
-        rec_addr.set_port(rec_addr.port()+1000);
+        rec_addr.set_port(rec_addr.port()+500);
         let stats_arc_ = stats_arc.clone();
+        let ss = servers_string.clone();
         let loop_fun = move || {
-          let mut sender = RequestSender::new(send_addr.to_string(), rec_addr.to_string(), format!("Client {}", i));
+          let mut sender = RequestSender::new(send_addr.to_string(), rec_addr.to_string(), format!("Client {}", i), ss);
           sender.init();
-            for j in 0..1000{
+            for j in 0..10000{
 
                 sender.send(String::from(format!("Hello from {} [{}]", send_addr.to_string(), j)));
                 // thread::sleep(Duration::from_secs(1));

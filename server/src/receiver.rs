@@ -66,7 +66,7 @@ pub struct RequestReceiver{
     sender: Arc<Mutex<Sender<([u8; 100], SocketAddr)>>>, 
     receiver:Arc<Mutex<Receiver<([u8; 100], SocketAddr)>>>,
     request_socket: Arc<Mutex<UdpSocket>>,
-    load: Arc<Mutex<u16>>,
+    load: Arc<Mutex<u128>>,
     index: usize, 
     election_ports: [String; 3],
     election_socket: Arc<Mutex<UdpSocket>>,
@@ -81,7 +81,7 @@ impl RequestReceiver{
         let mut request_addr = SocketAddrV4::from_str(&addr).unwrap();
         request_addr.set_port(request_addr.port()+100); 
         let (sender, receiver) = channel::<([u8; 100], SocketAddr)>();
-        let election_ports = ["127.0.0.1:9000".to_string(),"127.0.0.1:9001".to_string(),"127.0.0.1:9002".to_string()]; 
+        let election_ports = ["192.168.1.114:9000".to_string(),"192.168.1.130:9001".to_string(),"192.168.1.130:9002".to_string()]; 
         RequestReceiver{
             addr: addr.clone(),
             socket: Arc::new(Mutex::new(UdpSocket::bind(addr).expect("couldn't bind sender to address"))),
@@ -179,7 +179,7 @@ impl RequestReceiver{
             println!("{}", String::from_utf8(request.to_vec()).unwrap());
             // let reply = String::from("REQ PROCESSED");
             request_socket.lock().unwrap().send_to(&request, addr).expect("Failed to send processed request");
-            thread::sleep(Duration::from_micros(1000));
+            thread::sleep(Duration::from_micros(5000));
             
         })
     }
@@ -208,7 +208,7 @@ impl RequestReceiver{
 
                     lock.recv_from(&mut buf).unwrap()
                 };
-                println!("Unlocked");
+                // println!("Unlocked");
                 let msg = ElectionMsg::from(&buf);   
                 if let ElectionMsgMode::Msg = msg.mode{   // if it's a message, handle it
                     slept = self.handle_election_msg(msg.data, addr); 
@@ -230,9 +230,9 @@ impl RequestReceiver{
         {
             let ack_reply = ElectionMsg{mode:  ElectionMsgMode::Ack, data: sent_rng.to_string()}.to_bytes();
             let guard = socket.lock().unwrap();
-            println!("Sending ACK");
+            // println!("Sending ACK");
             guard.send_to(&ack_reply.clone(), addr).unwrap();
-            println!("ACK");
+            // println!("ACK");
         }
   
         if incoming_rng == self.rng_val {
@@ -248,7 +248,7 @@ impl RequestReceiver{
              let c =self.socket.clone();
              let _c = c.lock().unwrap(); 
             println!("Sleeping");
-            thread::sleep(Duration::from_secs(10));  // fall for 1 min
+            thread::sleep(Duration::from_secs(60));  // fall for 1 min
             println!("Woke Up");
             self.rng_val = rand::thread_rng().gen();
             self.times_elected +=1; 

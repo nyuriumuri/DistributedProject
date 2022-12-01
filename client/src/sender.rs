@@ -6,7 +6,6 @@ use std::sync::{Arc, Mutex};
 use serde_json;
 use std::thread;
 use std::time::{self, Instant, Duration};
-use std::fs;
 #[derive(Deserialize, Serialize, Debug)]
 struct ServerStat {
     name: String, 
@@ -38,10 +37,10 @@ pub struct RequestSender{
     // recepient_addr: String, 
 }
 
-const SERVERS_JSON : &str = "servers.json";
+// const SERVERS_JSON : &str = "servers.json";
 impl RequestSender{
-    pub fn new(rec_addr: String, send_addr: String, name: String) -> RequestSender {
-        let servers_string = fs::read_to_string(SERVERS_JSON).expect("Could not read server json file");   
+    pub fn new(rec_addr: String, send_addr: String, name: String, servers_string: String) -> RequestSender {
+  
         let servers = serde_json::from_str(&servers_string).expect("Could not deserialize json");  
         let send_socket = UdpSocket::bind(send_addr).expect("couldn't bind sender to address");
         send_socket.set_read_timeout(Some(time::Duration::from_millis(900))).unwrap();
