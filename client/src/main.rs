@@ -37,7 +37,7 @@ fn main() {
         let loop_fun = move || {
           let mut sender = RequestSender::new(send_addr.to_string(), rec_addr.to_string(), format!("Client {}", i), ss);
           sender.init();
-            for j in 0..10000{
+            for j in 0..20000{
 
                 sender.send(String::from(format!("Hello from {} [{}]", send_addr.to_string(), j)));
                 // thread::sleep(Duration::from_secs(1));

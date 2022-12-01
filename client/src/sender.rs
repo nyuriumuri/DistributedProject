@@ -29,7 +29,7 @@ pub struct RequestSender{
     send_socket: Arc<Mutex<UdpSocket>>,
     servers: Vec<String>,
     min_server: Arc<Mutex<u16>>,
-    min_server_load: Arc<Mutex<u16>>,
+    min_server_load: Arc<Mutex<u128>>,
     messages_per_server: [(u32, u32); 3],   //0: total messages sent  | 1: messages successfully received 
     avg_request_time : (u128, u128),  // 0: total successful messages,  1: average time per successful request
     total_sent: u128
@@ -48,7 +48,7 @@ impl RequestSender{
             name: name, 
             servers: servers,
             min_server: Arc::new(Mutex::new(0)),
-            min_server_load: Arc::new(Mutex::new(u16::MAX)),
+            min_server_load: Arc::new(Mutex::new(u128::MAX)),
             rec_socket: Arc::new(Mutex::new(UdpSocket::bind(rec_addr).expect("couldn't bind sender to address"))),
             send_socket: Arc::new(Mutex::new(send_socket)),
             messages_per_server : [(0,0); 3],
@@ -78,14 +78,14 @@ impl RequestSender{
                 {
                     let socket_lock = s_socket.lock().unwrap();
                     socket_lock.send_to(&buf, server).expect("Failed to send pulse");
-                    let mut recv_buf = [0; 2]; 
+                    let mut recv_buf = [0; 16]; 
                     let recv_res = socket_lock.recv_from(&mut recv_buf);
                     drop(socket_lock); 
                     match recv_res{
                         Ok((_,_)) => {
                             let mut min_server_load = s_min_server_load.lock().unwrap();
                             let mut min_server = s_min_server.lock().unwrap();
-                            let val = u16::from_be_bytes(recv_buf);
+                            let val = u128::from_be_bytes(recv_buf);
                            // print!("{}: {} | {:?}\n", i, val, recv_buf);
                             if val < *min_server_load{
                                 *min_server_load = val;
@@ -100,11 +100,11 @@ impl RequestSender{
                 let mut min_server_load = s_min_server_load.lock().unwrap();
                 let min_server = s_min_server.lock().unwrap();
                // println!("Load: {} \nServer: {}",*min_server_load, *min_server);
-                *min_server_load = u16::MAX;
+                *min_server_load = u128::MAX;
 
                 drop(min_server_load);
                 drop(min_server);
-                thread::sleep(time::Duration::from_secs(5));
+                thread::sleep(time::Duration::from_millis(500));
             }
          });
         
