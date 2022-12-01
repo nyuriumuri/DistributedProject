@@ -8,8 +8,45 @@ use std::{thread};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{ Sender, Receiver, channel};
 use std::str::FromStr;
+
 use std::io::Write;
+
+
+use rand::Rng;
 //use rand::prelude::{random};
+
+enum ElectionMsgMode{
+    Ack,
+    Msg,
+}
+
+struct ElectionMsg{
+    mode: ElectionMsgMode,
+    data: String
+}
+
+impl ElectionMsg{
+    fn toBytes(&self) -> [u8; 1024]{
+        let mut bytes: [u8; 1024] = [0; 1024];
+        match self.mode{
+            Ack => {
+                bytes[0..3].clone_from_slice( &['A' as u8,'C' as u8,'K' as u8]); 
+                bytes[3..self.data.len()+3].copy_from_slice(self.data.as_bytes());
+            },
+            Msg => {
+                bytes[0..3].clone_from_slice( &['M' as u8,'S' as u8,'G' as u8]); 
+                bytes[3..self.data.len()+3].copy_from_slice(self.data.as_bytes());
+            }
+        }
+        bytes
+    }
+}
+
+impl From<&[u8]> for ElectionMsg {
+    fn from(bytes:&[u8]) -> Self {
+        ElectionMsg { mode: ElectionMsgMode::Ack, data: "data".to_string() }
+    }
+} 
 
 pub struct RequestReceiver{
     addr: String,
@@ -18,22 +55,29 @@ pub struct RequestReceiver{
     receiver:Receiver<([u8; 100], SocketAddr)>,
     request_socket: UdpSocket,
     load: Arc<Mutex<u16>>,
+    index: usize, 
+    election_ports: [String; 3],
+    election_socket: Arc<Mutex<UdpSocket>>
 
 }
 
 
 impl RequestReceiver{
-    pub fn new(addr: String) -> RequestReceiver {
+    pub fn new(addr: String, index: usize) -> RequestReceiver {
         let mut request_addr = SocketAddrV4::from_str(&addr).unwrap();
         request_addr.set_port(request_addr.port()+100); 
         let (sender, receiver) = channel::<([u8; 100], SocketAddr)>();
+        let  election_ports = ["127.0.0.1:9000".to_string(),"127.0.0.1:9001".to_string(),"127.0.0.1:9002".to_string()]; 
         RequestReceiver{
             addr: addr.clone(),
             socket: Arc::new(Mutex::new(UdpSocket::bind(addr).expect("couldn't bind sender to address"))),
             sender: Arc::new(Mutex::new(sender)), 
             receiver: receiver,
             request_socket: UdpSocket::bind(request_addr).expect("Failed to bind to request addr"), 
-            load: Arc::new(Mutex::new(0))
+            load: Arc::new(Mutex::new(0)),
+            index,
+            election_ports,
+            election_socket: Arc::new(Mutex::new(UdpSocket::bind(election_ports[index]).expect("Couldn't bindto election socket")))
 
         }
     }
@@ -111,6 +155,64 @@ impl RequestReceiver{
             thread::sleep(Duration::from_micros(1000));
             
         }
+    }
+
+     // function for election in a new thread
+     pub fn election(&self) -> JoinHandle<()> {
+        let addr_array = ["127.0.0.1:9000","127.0.0.1:9001","127.0.0.1:9002"];
+
+        let index = self.index.clone();
+
+        let mut buf = [0; 1024]; 
+
+        let mut rng : i8 = rand::thread_rng().gen_range(1..3);
+
+        let rng = rng.to_string();  
+
+
+        return thread::spawn(move || loop {
+
+                std::thread::sleep(std::time::Duration::from_secs(30)); // sleep for 30 seconds
+                let mut rng : i8 = rand::thread_rng().gen_range(0..3); // generate random number from 0 to 2
+
+                let rng = rng.to_string();   // convert random number to string
+                let socket1 = UdpSocket::bind(addr_array[index]).unwrap(); // bind socket to port 9000 and store in socket1 variable
+
+
+                
+                loop {
+
+                    let sent_to_next = false;  
+                    let i = 1;
+
+                    socket1.send_to(rng.as_bytes(), addr_array[(index+1)%3]).unwrap(); // send random number to port 9001
+                    socket1.send_to(rng.as_bytes(), addr_array[(index+2)%3]).unwrap(); // send random number to port 9001
+
+                    let (amt, src) = socket1.recv_from(&mut buf).unwrap(); // receive message from sender thread and store in amt and src variables
+                    // println!("{}: {}", src, str::from_utf8(&buf[..amt]).unwrap()); // print message from sender thread to console
+
+                    // print buf to console
+                    let buf_str = std::str::from_utf8(&buf[..amt]).unwrap().clone();
+                    // clone buf_str to index_0 to store index of leader
+
+                    
+                    std::thread::sleep(std::time::Duration::from_secs(5)); // sleep for 5 seconds
+            }
+
+        });
+    }
+
+    fn send_election_msg(&self, rng: u32){
+
+        let mut sent = false;
+        let i = self.index+1; 
+        while !sent {
+            
+        }
+        
+    }
+    fn handle_election_msg(){
+
     }
 
 }
