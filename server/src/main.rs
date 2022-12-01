@@ -1,6 +1,6 @@
 
 mod receiver;
-use std::{env, time::Duration, thread};
+use std::{env, time::Duration, thread, fs, io::Write};
 use receiver::RequestReceiver;
 fn main() {
     let args: Vec<String> = env::args().collect();  // get server address
@@ -11,16 +11,21 @@ fn main() {
     }; 
     
     let mut receiver = RequestReceiver::new(receive_addr.to_string(), index);
-    let t1 = receiver.listen(); 
-    let t2 = receiver.log_stats();
-    let t3 = receiver.handle_requests();
+    receiver.listen(); 
+    receiver.log_stats();
+    receiver.handle_requests();
     loop{
         thread::sleep(Duration::from_secs(10));
         receiver.election(); 
+        let mut file = fs::File::create({
+            let fname = receive_addr.to_string().clone();
+            format!("{}-times_elected.txt", fname.replace(":", "-"))
+        }).unwrap();
+        writeln!(file, "{}", receiver.times_elected).unwrap();
     }
-    t1.join().unwrap();
-    t2.join().unwrap();
-    t3.join().unwrap();
+    // t1.join().unwrap();
+    // t2.join().unwrap();
+    // t3.join().unwrap();
     
 }
 

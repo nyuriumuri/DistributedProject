@@ -3,7 +3,7 @@ use std::fs::{File};
 // use  std::sync::mpsc::Sender;
 use std::net::{UdpSocket, SocketAddr, SocketAddrV4};
 // use std::os::unix::net::SocketAddr;
-use std::thread::{JoinHandle, Thread};
+use std::thread::{JoinHandle};
 use std::time::Duration;
 use std::{thread};
 use std::sync::{Arc, Mutex};
@@ -27,7 +27,7 @@ struct ElectionMsg{
 }
 
 impl ElectionMsg{
-    fn toBytes(self) -> [u8; 1024]{
+    fn to_bytes(self) -> [u8; 1024]{
         let mut bytes: [u8; 1024] = [0; 1024];
         let mode = self.mode;
         match mode{
@@ -71,6 +71,7 @@ pub struct RequestReceiver{
     election_ports: [String; 3],
     election_socket: Arc<Mutex<UdpSocket>>,
     rng_val: u32, 
+    pub times_elected: u32,
 
 }
 
@@ -91,7 +92,8 @@ impl RequestReceiver{
             index,
             election_ports: election_ports.clone(),
             election_socket: Arc::new(Mutex::new(UdpSocket::bind(&election_ports[index]).expect("Couldn't bindto election socket"))),
-            rng_val: 0
+            rng_val: 0,
+            times_elected: 0,
 
         }
     }
@@ -102,13 +104,16 @@ impl RequestReceiver{
         let socket_arc = self.socket.clone();
         let sender_arc  = self.sender.clone();
         return thread::spawn(move || loop{
-                let socket =  socket_arc.lock().unwrap();
+               
                 let sender = sender_arc.lock().unwrap();
-                let mut buf = [0; 100];    
-                let (_, src_addr) = (*socket).recv_from(&mut buf).expect("Didn't receive data");
-                // let buf_str = str::from_utf8(&buf[..]).unwrap();
-                // println!("{}", buf_str);
-                // println!("Got a message from {}", src_addr);
+                let mut buf = [0; 100]; 
+                let src_addr: SocketAddr;    
+                {
+                let socket =  socket_arc.lock().unwrap();
+                (_, src_addr) = (*socket).recv_from(&mut buf).expect("Didn't receive data");
+                    drop(socket);
+                 }
+              
                 if buf[0] == 2  // asking for load
                 {
                     let reply_addr = src_addr;
@@ -117,7 +122,12 @@ impl RequestReceiver{
                     // println!("Load: {}",*message);
                     let message = (*message).to_be_bytes();
                     // println!("{:?}", message);
-                    (*socket).send_to(&message, reply_addr).expect("Failed to send acknowledgement");
+                    {
+                        let socket =  socket_arc.lock().unwrap();
+                        (*socket).send_to(&message, reply_addr).expect("Failed to send acknowledgement");
+                        drop(socket)
+                    }
+               
                 }
                 else if  buf[0] == 1 { // ack
                     
@@ -181,8 +191,8 @@ impl RequestReceiver{
         let election_socket = self.election_socket.clone();
         loop {  
            
-            self.rng_val = rand::thread_rng().gen();
-
+        
+            let mut slept = false;
             self.send_election_msg(self.rng_val);
             // loop till you get an election message
             let mut message = false;
@@ -191,58 +201,74 @@ impl RequestReceiver{
             while ! message {
        
                 (_,addr) = {
+                    // println!("Locking");
                     let lock = election_socket.lock().unwrap();
-
+                    // println!("Locked");
                     lock.set_read_timeout(None).unwrap();
 
-                    election_socket.lock().unwrap().recv_from(&mut buf).unwrap()
+                    lock.recv_from(&mut buf).unwrap()
                 };
+                println!("Unlocked");
                 let msg = ElectionMsg::from(&buf);   
                 if let ElectionMsgMode::Msg = msg.mode{   // if it's a message, handle it
-                    self.handle_election_msg(msg.data, addr); 
+                    slept = self.handle_election_msg(msg.data, addr); 
                     message = true;
+        
                 }
             }
+            if slept{ break }
 
-            }
+        }
         
     }
 
-    fn handle_election_msg(&self, data: String, addr: SocketAddr){
-        let incoming_rng = data.parse::<u32>().unwrap();
+    fn handle_election_msg(&mut self, data: String, addr: SocketAddr) -> bool {
+        let incoming_rng = data.trim_matches(char::from(0)).parse::<u32>().expect(format!("Invalid u32 data {}", data).as_str());
         println!("Incoming RNG: {}, My RNG: {}", incoming_rng, self.rng_val);
         let sent_rng: u32 = if incoming_rng > self.rng_val { incoming_rng } else { self.rng_val }; 
         let socket = self.election_socket.clone();
         {
-            let ack_reply = ElectionMsg{mode:  ElectionMsgMode::Ack, data: sent_rng.to_string()}.toBytes();
+            let ack_reply = ElectionMsg{mode:  ElectionMsgMode::Ack, data: sent_rng.to_string()}.to_bytes();
             let guard = socket.lock().unwrap();
             println!("Sending ACK");
             guard.send_to(&ack_reply.clone(), addr).unwrap();
             println!("ACK");
         }
+  
         if incoming_rng == self.rng_val {
+            // println!("LOCKING A");
              let a =  self.election_socket.clone();
-             let a = a.lock().unwrap(); 
+             let _a = a.lock().unwrap(); 
+            //  println!("LOCKING B");
+
              let b = self.request_socket.clone();
-             let b = b.lock().unwrap();
+             let _b = b.lock().unwrap();
+            //  println!("LOCKING C");
+
              let c =self.socket.clone();
-             let c = c.lock().unwrap(); 
+             let _c = c.lock().unwrap(); 
             println!("Sleeping");
-            thread::sleep(Duration::from_secs(2));  // fall for 1 min
+            thread::sleep(Duration::from_secs(10));  // fall for 1 min
             println!("Woke Up");
-            
+            self.rng_val = rand::thread_rng().gen();
+            self.times_elected +=1; 
+            return true;
 
         
-        }else{
+        }else if incoming_rng > self.rng_val {
+                self.rng_val = rand::thread_rng().gen();
+                self.send_election_msg(sent_rng); 
+            } else{
             self.send_election_msg(sent_rng); 
         }
+        return false;
         
 
     }
     fn send_election_msg(&self, rng: u32){
         println!("SENDING {}", rng);
         let mut sent = false;
-        let message =  ElectionMsg{mode: ElectionMsgMode::Msg, data: rng.to_string() }.toBytes();
+        let message =  ElectionMsg{mode: ElectionMsgMode::Msg, data: rng.to_string() }.to_bytes();
         // println!("Message: {:?}", message);
         let socket = self.election_socket.clone();     
             
@@ -251,24 +277,26 @@ impl RequestReceiver{
             let mut buf: [u8; 1024] = [0; 1024];        
             let read_res = {
                 let socket_guard = socket.lock().unwrap();     
-                println!("sending");
+                // println!("sending");
                 socket_guard.send_to( &message.clone(), self.election_ports[i%3].clone()).unwrap();
-                println!("sent");
+                // println!("sent");
                 socket_guard.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
-                socket_guard.recv_from(&mut buf)
+                socket_guard.peek_from(&mut buf)
 
             };
             
             match read_res {
                     Ok(_) => {
-                        println!("OK");
+                        // println!("OK");
                         sent = true;
                         }
                         
                     
                     Err(_) => {
-                        println!("Err");
+                        // println!("Err");
                         i+=1;    // transmit to next server if recv failed
+                        i%=3;
+                        if i == self.index { i+=1}
                     }
             }
         }
