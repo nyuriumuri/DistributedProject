@@ -42,9 +42,19 @@ impl ElectionMsg{
     }
 }
 
-impl From<&[u8]> for ElectionMsg {
-    fn from(bytes:&[u8]) -> Self {
-        ElectionMsg { mode: ElectionMsgMode::Ack, data: "data".to_string() }
+impl From<&[u8;1024]> for ElectionMsg {
+    fn from(bytes:&[u8;1024]) -> Self {
+
+        if &bytes[0..3] == &['A' as u8, 'C' as u8, 'K' as u8][..] {
+            return ElectionMsg{ mode:ElectionMsgMode::Ack, data:String::from_utf8(bytes[3..].to_vec()).expect("Could not convert byte array to ElectionMsg Data") };
+        }else if &bytes[0..3] == &['M' as u8, 'S' as u8, 'G' as u8][..]{
+
+            return ElectionMsg{ mode:ElectionMsgMode::Msg, data:String::from_utf8(bytes[3..].to_vec()).expect("Could not convert byte array to ElectionMsg Data") };
+
+        }else{
+
+            panic!("Invalid ElectionMsg byte array");
+        }
     }
 } 
 
@@ -202,17 +212,38 @@ impl RequestReceiver{
         });
     }
 
+    fn handle_election_msg(&self, data: String){
+        // tbd
+
+    }
     fn send_election_msg(&self, rng: u32){
 
         let mut sent = false;
-        let i = self.index+1; 
+        let message =  ElectionMsg{mode: ElectionMsgMode::Ack, data: rng.to_string() }.toBytes();
+        let socket = self.election_socket.clone();     
+        let socket_guard = socket.lock().unwrap();     
+        let mut i = self.index+1; 
         while !sent {
             
+            socket_guard.send_to( &message.clone(), self.election_ports[i]);
+            socket_guard.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+            let buf: [u8; 1024] = [0; 1024];
+            let read_res = socket_guard.recv_from(&mut buf);
+            match read_res {
+                    Ok(_) => {
+                        let msg = ElectionMsg::from(&buf);
+                        if let ElectionMsgMode::Msg = msg.mode{
+                            self.handle_election_msg(msg.data); 
+                        }else {
+                            sent = true; 
+                        }
+                        
+                    }
+                    Err(_) => i+=1   
+            }
         }
         
     }
-    fn handle_election_msg(){
 
-    }
 
 }
