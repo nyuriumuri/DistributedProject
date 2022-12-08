@@ -81,7 +81,7 @@ impl RequestReceiver{
         let mut request_addr = SocketAddrV4::from_str(&addr).unwrap();
         request_addr.set_port(request_addr.port()+100); 
         let (sender, receiver) = channel::<([u8; 100], SocketAddr)>();
-        let election_ports = ["192.168.1.130:9000".to_string(),"192.168.1.130:9001".to_string(),"192.168.1.130:9002".to_string()]; 
+        let election_ports = ["10.7.29.160:9000".to_string(),"10.7.29.9:9000".to_string(),"10.7.29.64:9002".to_string()]; 
         RequestReceiver{
             addr: addr.clone(),
             socket: Arc::new(Mutex::new(UdpSocket::bind(addr).expect("couldn't bind sender to address"))),
