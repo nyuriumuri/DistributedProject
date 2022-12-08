@@ -15,7 +15,7 @@ fn main() {
     receiver.log_stats();
     receiver.handle_requests();
     loop{
-        thread::sleep(Duration::from_secs(300));
+        thread::sleep(Duration::from_secs(5));
         receiver.election(); 
         let mut file = fs::File::create({
             let fname = receive_addr.to_string().clone();

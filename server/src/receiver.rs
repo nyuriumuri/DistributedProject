@@ -19,6 +19,7 @@ use rand::Rng;
 enum ElectionMsgMode{
     Ack,
     Msg,
+    Slp, 
 }
 
 struct ElectionMsg{
@@ -38,7 +39,12 @@ impl ElectionMsg{
             ElectionMsgMode::Msg => {
                 bytes[0..3].clone_from_slice( &['M' as u8,'S' as u8,'G' as u8]); 
                 bytes[3..self.data.len()+3].copy_from_slice(self.data.as_bytes());
+            }, 
+            ElectionMsgMode::Slp => {
+                bytes[0..3].clone_from_slice( &['S' as u8,'L' as u8,'P' as u8]); 
+                bytes[3..self.data.len()+3].copy_from_slice(self.data.as_bytes());
             }
+
         }
         bytes
     }
@@ -52,6 +58,10 @@ impl From<&[u8;1024]> for ElectionMsg {
         }else if &bytes[0..3] == &['M' as u8, 'S' as u8, 'G' as u8][..]{
 
             return ElectionMsg{ mode:ElectionMsgMode::Msg, data:String::from_utf8(bytes[3..].to_vec()).expect("Could not convert byte array to ElectionMsg Data") };
+
+        }else if &bytes[0..3] == &['S' as u8, 'L' as u8, 'P' as u8][..]{
+
+            return ElectionMsg{ mode:ElectionMsgMode::Slp, data:String::from_utf8(bytes[3..].to_vec()).expect("Could not convert byte array to ElectionMsg Data") };
 
         }else{
 
@@ -189,11 +199,12 @@ impl RequestReceiver{
         
         self.rng_val = rand::thread_rng().gen();
         let election_socket = self.election_socket.clone();
+        self.send_election_msg(self.rng_val);
         loop {  
            
         
             let mut slept = false;
-            self.send_election_msg(self.rng_val);
+           
             // loop till you get an election message
             let mut message = false;
             let mut addr: SocketAddr; 
@@ -214,14 +225,59 @@ impl RequestReceiver{
                     slept = self.handle_election_msg(msg.data, addr); 
                     message = true;
         
+                }else if let ElectionMsgMode::Slp = msg.mode{
+                    self.handle_sleep_msg(msg.data);
+                    slept = true; 
+                    message = true;
                 }
             }
             if slept{ break }
 
         }
+
+           // empty socket buffer before exiting
+        let socket = self.election_socket.clone();   
+        // let buf: [u8;1000] = [0;1000];
+        loop{
+            let read_res = {
+                let socket_guard = socket.lock().unwrap();     
+                // println!("sending");
+                // socket_guard.send_to( &message.clone(), self.election_ports[i%3].clone()).unwrap();
+                // println!("sent");
+                socket_guard.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+                socket_guard.peek_from(&mut [0;100])
+
+            };
+
+            if let Err(_) = read_res{
+                break;
+            }
+        }
+        println!("Emptied Recv")
+
+     
         
     }
 
+    fn handle_sleep_msg(& self, data: String){
+        let slept_index = data.trim_matches(char::from(0)).parse::<u32>().expect(format!("Invalid u32 data {}", data).as_str());
+        let index = self.index as u32; 
+        println!("Received Sleep Message. Slept Index: {}, My Index: {}", slept_index, index);
+
+        if slept_index == (index+1)%3 {   // do not broadcast if next one has slept
+            println!("Next Index is Sleep Index, No Broadcast");
+            return 
+        }else{
+            let slp_broadcast = ElectionMsg{mode:  ElectionMsgMode::Slp, data: data}.to_bytes();
+            let socket = self.election_socket.clone();
+            let guard = socket.lock().unwrap();
+            println!("Broadcasting Sleep to {}",(self.index+1)%3);
+
+            // println!("Sending ACK");
+            guard.send_to(&slp_broadcast, self.election_ports[(self.index+1)%3].clone()).unwrap();
+
+        }
+    }
     fn handle_election_msg(&mut self, data: String, addr: SocketAddr) -> bool {
         let incoming_rng = data.trim_matches(char::from(0)).parse::<u32>().expect(format!("Invalid u32 data {}", data).as_str());
         println!("Incoming RNG: {}, My RNG: {}", incoming_rng, self.rng_val);
@@ -236,6 +292,12 @@ impl RequestReceiver{
         }
   
         if incoming_rng == self.rng_val {
+            let slp_message = ElectionMsg{mode:  ElectionMsgMode::Slp, data: (self.index as u32).to_string()}.to_bytes();
+            let guard = socket.lock().unwrap();
+            // println!("Sending ACK");
+            guard.send_to(&slp_message, self.election_ports[(self.index+1)%3].clone()).unwrap();
+            drop(guard);
+            println!("SENT SLEEP");
             // println!("LOCKING A");
              let a =  self.election_socket.clone();
              let _a = a.lock().unwrap(); 
@@ -243,22 +305,19 @@ impl RequestReceiver{
 
              let b = self.request_socket.clone();
              let _b = b.lock().unwrap();
-            //  println!("LOCKING C");
+             println!("LOCKING C");
 
              let c =self.socket.clone();
              let _c = c.lock().unwrap(); 
             println!("Sleeping");
-            thread::sleep(Duration::from_secs(60));  // fall for 1 min
+            thread::sleep(Duration::from_secs(1));  // fall for 1 min
             println!("Woke Up");
             self.rng_val = rand::thread_rng().gen();
             self.times_elected +=1; 
             return true;
 
         
-        }else if incoming_rng > self.rng_val {
-                self.rng_val = rand::thread_rng().gen();
-                self.send_election_msg(sent_rng); 
-            } else{
+        }else{
             self.send_election_msg(sent_rng); 
         }
         return false;
